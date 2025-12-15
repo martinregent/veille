@@ -1,0 +1,60 @@
+site_name: Veille Technologique - Martin Regent
+site_description: Veille technologique automatisée avec Mistral AI et MkDocs
+site_url: https://martinregent.github.io/veille/
+repo_url: https://github.com/martinregent/veille
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: fr
+  logo: https://www.gravatar.com/avatar/placeholder?s=32&d=identicon
+  favicon: data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">📰</text></svg>
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/weather-night
+        name: Passer au mode sombre
+    - scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/weather-sunny
+        name: Passer au mode clair
+  features:
+    - navigation.indexes
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+
+plugins:
+  - search:
+      lang: fr
+  - tags:
+      tags_file: tags.md
+  - minify:
+      minify_html: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.emoji:
+      emoji_index: !!python/name:pymdownx.emoji.twemoji
+      emoji_generator: !!python/name:pymdownx.emoji.to_svg
+  - pymdownx.highlight:
+      use_pygments: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: "#"
+  - meta
+
+nav:
+  - Accueil: index.md
+  - Tags: tags.md
+  - Fiches: fiches/
