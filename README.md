@@ -46,7 +46,13 @@ veille/
 │           └── 12/                 # Organisation par mois
 │               └── 15-article.md   # Fiches avec timestamp
 ├── scripts/
-│   └── process_veille.py           # Script principal de traitement
+│   ├── process_veille.py           # Script principal de traitement
+│   └── veille_api_server.py        # Serveur API local (optionnel)
+├── chrome-extension/               # 🎯 Extension Chrome pour capturer
+│   ├── manifest.json               # Configuration
+│   ├── popup.html/js               # Interface
+│   ├── background.js               # Service worker
+│   └── icons/                      # Icônes
 ├── .github/
 │   └── workflows/
 │       └── publish.yml             # Workflow GitHub Actions
@@ -101,7 +107,20 @@ REPO_NAME=veille
 pip install -r requirements.txt
 ```
 
-### 5. Créer le label GitHub
+### 5. Installer l'extension Chrome (Optionnel mais recommandé)
+
+L'extension Chrome te permet de capturer les articles en **1 clic**, sans passer par GitHub.
+
+**Installation rapide :**
+1. Ouvre `chrome://extensions/`
+2. Active le "Mode de développement"
+3. Clique "Charger l'extension non empaquetée"
+4. Sélectionne le dossier `chrome-extension/`
+5. Configure ton token GitHub dans le popup
+
+[Documentation complète de l'extension →](chrome-extension/README.md)
+
+### 6. Créer le label GitHub
 
 Dans ton repository GitHub :
 1. Va sur "Issues" → "Labels"
@@ -113,7 +132,17 @@ Dans ton repository GitHub :
 
 #### 1️⃣ Ingestion (sur mobile/laptop)
 
-**Sur mobile :**
+**Option A : Extension Chrome (⭐ Recommandé, plus rapide)**
+
+1. Installe l'extension depuis `chrome-extension/` (voir [Guide d'installation](chrome-extension/README.md))
+2. Sur n'importe quelle page → **Clic droit** → **"Ajouter à Veille"**
+3. 🎉 L'article est capturé automatiquement!
+
+[En savoir plus sur l'extension →](chrome-extension/README.md)
+
+**Option B : Via GitHub (Mobile ou navigateur sans l'extension)**
+
+Sur mobile :
 - Ouvre l'app GitHub officielle
 - Va sur ton repo `veille`
 - Clique "+"
@@ -122,7 +151,7 @@ Dans ton repository GitHub :
 - Ajoute le label `to_process`
 - Crée l'issue
 
-**Sur laptop :**
+Sur laptop (sans l'extension) :
 - Crée un bookmark vers `https://github.com/martinregent/veille/issues/new`
 - Partage l'URL via ce bookmark
 - Ajoute le label `to_process`
@@ -193,6 +222,54 @@ issue: "#123"
 **Tags :** `tag1`, `tag2`, `tag3`
 
 *Généré automatiquement via Mistral AI - Issue #123*
+```
+
+## 🌐 Approches d'Ingestion
+
+### Approche 1 : Extension Chrome (Recommandé)
+
+**Avantages :**
+- ✅ 1 clic pour capturer
+- ✅ Menu contextuel (clic droit)
+- ✅ Configuration simple
+- ✅ Token stocké localement (sécurisé)
+- ✅ Notifications en temps réel
+
+**Installation :**
+```bash
+1. chrome://extensions/
+2. Mode développement ON
+3. Charger l'extension → chrome-extension/
+4. Configurer le token GitHub
+```
+
+[Documentation complète →](chrome-extension/README.md)
+
+### Approche 2 : Serveur API Local
+
+**Avantages :**
+- ✅ Approche centralisée
+- ✅ Plus de flexibilité
+- ✅ Peut servir d'autres clients (mobile app, etc)
+- ✅ Token GitHub pas stocké dans l'extension
+
+**Installation :**
+```bash
+python3 scripts/veille_api_server.py
+```
+
+Puis configurer l'extension pour pointer vers `http://localhost:5888/api/capture`
+
+**Endpoint :**
+```bash
+POST /api/capture
+Content-Type: application/json
+
+{
+  "url": "https://example.com/article",
+  "description": "Optional note",
+  "tags": ["tag1", "tag2"]
+}
 ```
 
 ## 🛠️ Personalisation

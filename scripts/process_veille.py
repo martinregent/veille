@@ -13,7 +13,7 @@ import re
 import json
 from pathlib import Path
 from bs4 import BeautifulSoup
-from mistralai import Mistral
+from mistralai.client import MistralClient
 import yaml
 from dotenv import load_dotenv
 
@@ -85,7 +85,7 @@ def scrape_content(url):
 
 def analyze_with_mistral(text, url):
     """Analyse le texte avec Mistral et retourne un JSON structuré."""
-    client = Mistral(api_key=MISTRAL_API_KEY)
+    client = MistralClient(api_key=MISTRAL_API_KEY)
 
     prompt = f"""Analyse le texte suivant qui provient d'un article technique pour une veille technologique.
 
@@ -113,7 +113,7 @@ Source: {url}
 """
 
     try:
-        chat_response = client.chat.complete(
+        chat_response = client.chat(
             model="mistral-large-latest",
             messages=[{"role": "user", "content": prompt}]
         )

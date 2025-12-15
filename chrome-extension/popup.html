@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Veille - Capturer un article</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📰 Veille</h1>
+      <p class="subtitle">Capture d'article</p>
+    </div>
+
+    <div id="content">
+      <!-- État de configuration -->
+      <div id="setup-state" style="display: none;" class="state">
+        <div class="alert alert-warning">
+          <strong>⚙️ Configuration requise</strong>
+          <p>Veuillez configurer vos identifiants GitHub pour utiliser cette extension.</p>
+        </div>
+
+        <form id="config-form">
+          <div class="form-group">
+            <label for="github-token">GitHub Personal Access Token:</label>
+            <input
+              type="password"
+              id="github-token"
+              placeholder="ghp_xxxxx..."
+              required
+            >
+            <small>Créer un token: https://github.com/settings/tokens</small>
+          </div>
+
+          <div class="form-group">
+            <label for="github-user">Utilisateur GitHub:</label>
+            <input
+              type="text"
+              id="github-user"
+              placeholder="martinregent"
+              value="martinregent"
+            >
+          </div>
+
+          <div class="form-group">
+            <label for="repo-name">Nom du repository:</label>
+            <input
+              type="text"
+              id="repo-name"
+              placeholder="veille"
+              value="veille"
+            >
+          </div>
+
+          <button type="submit" class="btn btn-primary">Sauvegarder la configuration</button>
+        </form>
+      </div>
+
+      <!-- État de capture -->
+      <div id="capture-state" style="display: none;" class="state">
+        <div class="form-group">
+          <label for="article-title">Titre de l'article:</label>
+          <input
+            type="text"
+            id="article-title"
+            placeholder="Titre détecté..."
+            readonly
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="article-url">URL:</label>
+          <input
+            type="text"
+            id="article-url"
+            placeholder="https://..."
+            readonly
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="article-description">Description (optionnel):</label>
+          <textarea
+            id="article-description"
+            placeholder="Ajoute une note personnelle..."
+            rows="3"
+          ></textarea>
+        </div>
+
+        <button id="capture-btn" class="btn btn-success btn-large">
+          ✅ Ajouter à la veille
+        </button>
+
+        <button id="config-btn" class="btn btn-secondary btn-small">
+          ⚙️ Configuration
+        </button>
+      </div>
+
+      <!-- État de chargement -->
+      <div id="loading-state" style="display: none;" class="state">
+        <div class="spinner"></div>
+        <p>Création de l'issue GitHub...</p>
+      </div>
+
+      <!-- État de succès -->
+      <div id="success-state" style="display: none;" class="state">
+        <div class="alert alert-success">
+          <h3>✅ Article ajouté!</h3>
+          <p id="success-message"></p>
+        </div>
+
+        <div class="actions">
+          <button id="view-issue-btn" class="btn btn-primary">
+            Voir l'issue
+          </button>
+          <button id="new-capture-btn" class="btn btn-secondary">
+            Capturer un autre article
+          </button>
+        </div>
+      </div>
+
+      <!-- État d'erreur -->
+      <div id="error-state" style="display: none;" class="state">
+        <div class="alert alert-error">
+          <h3>❌ Erreur</h3>
+          <p id="error-message"></p>
+        </div>
+
+        <button id="retry-btn" class="btn btn-primary">
+          Réessayer
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
