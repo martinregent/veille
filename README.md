@@ -11,26 +11,39 @@ Centraliser l'ingestion d'articles techniques depuis plusieurs sources (mobile, 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      INGESTION (Inbox)                       │
-│                    GitHub Issues + Labels                    │
-│  Mobile → Share to GitHub | Laptop → Browser | Mail → ...   │
+│                   Extension Chrome + GitHub                  │
+│  Articles → Clic droit → "Ajouter à Veille"                 │
 └──────────────────────────┬──────────────────────────────────┘
                           │
                           ▼
+                   GitHub Issues (API)
+              (label: to_process)
+                          │
+                          ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                   TRAITEMENT (Local)                         │
-│            Python Script + Mistral AI Analysis               │
-│  1. Récupère issues with label 'to_process'                 │
+│          TRAITEMENT (GitHub Actions - Auto)                 │
+│       Quotidien à 20h UTC ou sur déclenchement manuel       │
+│  1. Récupère issues avec label 'to_process'                │
 │  2. Scrape le contenu de chaque URL                         │
 │  3. Appelle Mistral pour résumé + tags + thématique        │
-│  4. Génère fichier Markdown structuré                       │
-│  5. Ferme issue avec commentaire de succès                  │
+│  4. Génère fichiers Markdown structurés                     │
+│  5. Commit + Push (déclenche le déploiement)               │
 └──────────────────────────┬──────────────────────────────────┘
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────────┐
-│               PUBLICATION & FRONT (Frontend)                │
-│              MkDocs + Material Theme + GitHub Pages         │
-│            Site statique consultable en ligne               │
+│     BUILD (GitHub Actions → MkDocs)                         │
+│           pip install + mkdocs build                        │
+└──────────────────────────┬──────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│     PUBLICATION (Cloudflare Pages - Global CDN)             │
+│     Déploiement automatique + Cache global                  │
+│     Site statique ultra-rapide disponible 24/7              │
+│                                                              │
+│         🌐 https://veille.pages.dev                         │
+│        (ou domaine custom configuré)                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -55,10 +68,14 @@ veille/
 │   └── icons/                      # Icônes
 ├── .github/
 │   └── workflows/
-│       └── publish.yml             # Workflow GitHub Actions
+│       ├── deploy-cloudflare.yml   # Déploie sur Cloudflare Pages
+│       └── process-and-deploy.yml  # Traite articles + déploie (auto)
+├── scripts/
+│   └── trigger_deployment.py       # Déclenche manuellement le deploy
 ├── mkdocs.yml                      # Configuration MkDocs
 ├── requirements.txt                # Dépendances Python
 ├── .env.example                    # Exemple de configuration
+├── CLOUDFLARE_SETUP.md             # Guide Cloudflare Pages
 └── README.md                       # Ce fichier
 ```
 
@@ -126,6 +143,30 @@ Dans ton repository GitHub :
 1. Va sur "Issues" → "Labels"
 2. Crée un nouveau label : `to_process` (de couleur jaune par exemple)
 
+### 7. Déployer sur Cloudflare Pages (⭐ Recommandé)
+
+Pour un hébergement gratuit, ultra-rapide et global :
+
+**Setup complet :** Voir [CLOUDFLARE_SETUP.md](CLOUDFLARE_SETUP.md)
+
+**Résumé rapide :**
+1. Va à https://dash.cloudflare.com/
+2. **Pages** → **Connect to Git** → Sélectionne ton repo
+3. Build command : `pip install -r requirements.txt && mkdocs build`
+4. Output directory : `site`
+5. Ajoute les secrets Cloudflare dans GitHub Actions
+6. **Deploy!** → Site sur `https://veille.pages.dev`
+
+**Avantages :**
+- ✅ Déploiement automatique à chaque push
+- ✅ CDN global (Ultra rapide partout)
+- ✅ SSL/HTTPS gratuit
+- ✅ Domaine custom possible
+- ✅ Logs détaillés
+- ✅ Gratuit pour toujours
+
+[Guide détaillé →](CLOUDFLARE_SETUP.md)
+
 ## 🚀 Utilisation
 
 ### Workflow Quotidien
@@ -177,11 +218,13 @@ git commit -m "Update veille"
 git push origin main
 ```
 
-GitHub Actions se déclenche automatiquement et déploie le site sur GitHub Pages.
+Les workflows GitHub Actions se déclenchent automatiquement :
+- ✅ `process-and-deploy.yml` : traite les articles (quotidien ou manuel)
+- ✅ `deploy-cloudflare.yml` : déploie sur Cloudflare Pages
 
 #### 4️⃣ Consulter
 
-Visite : `https://martinregent.github.io/veille/`
+Visite : **`https://veille.pages.dev`** (ou ton domaine custom)
 
 ### Lancer localement
 
@@ -320,10 +363,36 @@ Même procédure, vérifie `GITHUB_TOKEN`.
 - Certains sites bloquent les bots simples
 - La fiche temporaire dans l'issue te dira si c'est un problème de scraping
 
-### GitHub Pages ne se met pas à jour
+### Cloudflare Pages ne déploie pas
 
-- Vérifie que les GitHub Actions passent (onglet "Actions" du repo)
-- Active GitHub Pages dans les settings : `Settings → Pages → Source: GitHub Actions`
+**Problème :** Le site ne se met pas à jour après un push
+
+**Solutions :**
+1. Vérifie que les workflows GitHub Actions passent : https://github.com/martinregent/veille/actions
+2. Vérifie les logs Cloudflare : https://dash.cloudflare.com/ → Pages → veille → Deployments
+3. Assure-toi que `CLOUDFLARE_API_TOKEN` et `CLOUDFLARE_ACCOUNT_ID` sont dans les secrets GitHub
+4. Relance manuellement : https://github.com/martinregent/veille/actions → "Process Articles & Deploy" → Run workflow
+
+### Workflow GitHub Actions qui ne s'exécute pas
+
+**Si process-and-deploy.yml ne tourne pas :**
+
+```bash
+# Vérifier les secrets
+https://github.com/martinregent/veille/settings/secrets/actions
+
+# Secrets requis:
+# - MISTRAL_API_KEY
+# - GITHUB_TOKEN
+# - CLOUDFLARE_API_TOKEN
+# - CLOUDFLARE_ACCOUNT_ID
+```
+
+**Déclencher manuellement :**
+```bash
+python3 scripts/trigger_deployment.py
+# Ou via UI: Actions → Process Articles & Deploy → Run workflow
+```
 
 ## 📝 Exemples
 
@@ -366,18 +435,53 @@ Résultat attendu :
 ==================================================
 ```
 
+### Déclencher manuellement le déploiement
+
+Si tu veux forcer l'exécution du workflow sans attendre l'heure prévue :
+
+```bash
+python3 scripts/trigger_deployment.py
+```
+
+Affichera :
+```
+🚀 Déclenchement du workflow 'process-and-deploy.yml'...
+✅ Workflow déclenché avec succès!
+
+📊 Suivi: https://github.com/martinregent/veille/actions
+🌐 Site: https://veille.pages.dev
+```
+
+Ou depuis GitHub UI : https://github.com/martinregent/veille/actions → "Process Articles & Deploy" → "Run workflow"
+
 ## 🔐 Sécurité
 
 - **Ne commite jamais ton `.env`** (il est dans `.gitignore`)
-- Les tokens GitHub sont limités au repo `veille`
-- Les clés API Mistral sont stockées localement seulement
+- **Secrets GitHub** : Stockés de manière chiffrée et sécurisée
+- **Tokens limités** : GitHub token limité au droit `repo`
+- **Clés API Mistral** : Utilisées uniquement par GitHub Actions en environnement isolé
+- **Token Cloudflare** : Limité à `Pages - Edit` uniquement
+
+## 📊 Monitoring
+
+**Suivi des déploiements :**
+- GitHub Actions : https://github.com/martinregent/veille/actions
+- Cloudflare Pages : https://dash.cloudflare.com/ → Pages → veille
+- Uptime : https://veille.pages.dev (vérifie que le site est accessible)
+
+**Logs disponibles :**
+- GitHub Actions : Détails de chaque workflow
+- Cloudflare : Logs de build + déploiement
+- Analytics : Cloudflare Pages Analytics (traffic, performance)
 
 ## 📚 Ressources
 
+- [Documentation Cloudflare Pages](https://developers.cloudflare.com/pages/)
 - [Documentation Mistral AI](https://docs.mistral.ai/)
 - [Documentation MkDocs Material](https://squidfunk.github.io/mkdocs-material/)
 - [GitHub API Docs](https://docs.github.com/en/rest)
 - [Beautiful Soup Docs](https://www.crummy.com/software/BeautifulSoup/)
+- [GitHub Actions Documentation](https://docs.github.com/en/actions)
 
 ## 🎨 Améliorations Futures
 
