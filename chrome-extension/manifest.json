@@ -3,7 +3,7 @@
   "name": "Veille - Capturer des articles",
   "version": "1.0.0",
   "description": "Capture rapidement n'importe quel article et l'ajoute à votre veille technologique",
-  "permissions": ["activeTab", "storage"],
+  "permissions": ["activeTab", "storage", "contextMenus"],
   "host_permissions": [
     "https://api.github.com/*"
   ],

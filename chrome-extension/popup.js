@@ -20,6 +20,7 @@ const viewIssueBtn = document.getElementById('view-issue-btn');
 const articleTitle = document.getElementById('article-title');
 const articleUrl = document.getElementById('article-url');
 const articleDescription = document.getElementById('article-description');
+const articleTags = document.getElementById('article-tags');
 const errorMessage = document.getElementById('error-message');
 const successMessage = document.getElementById('success-message');
 
@@ -90,8 +91,15 @@ async function getCurrentPageInfo() {
 /**
  * Crée une issue GitHub via l'API
  */
-async function createGitHubIssue(config, url, description) {
-  const body = description ? `${url}\n\n${description}` : url;
+async function createGitHubIssue(config, url, note, tags) {
+  // On structure le corps en JSON pour le script de traitement
+  const issueData = {
+    url: url,
+    note: note || "",
+    tags: tags ? tags.split(',').map(t => t.trim()).filter(t => t) : []
+  };
+
+  const body = JSON.stringify(issueData, null, 2);
 
   const response = await fetch(
     `https://api.github.com/repos/${config.user}/${config.repo}/issues`,
@@ -166,6 +174,7 @@ captureBtn.addEventListener('click', async () => {
   const config = await loadConfig();
   const url = articleUrl.value;
   const description = articleDescription.value;
+  const tags = articleTags.value;
 
   if (!url) {
     showError('L\'URL est requise');
@@ -175,7 +184,7 @@ captureBtn.addEventListener('click', async () => {
   showState(loadingState);
 
   try {
-    const issue = await createGitHubIssue(config, url, description);
+    const issue = await createGitHubIssue(config, url, description, tags);
     currentIssueUrl = issue.html_url;
     successMessage.textContent = `Issue #${issue.number} créée avec succès!`;
     showState(successState);
@@ -200,6 +209,7 @@ configBtn.addEventListener('click', async () => {
  */
 newCaptureBtn.addEventListener('click', async () => {
   articleDescription.value = '';
+  articleTags.value = '';
   await init();
 });
 

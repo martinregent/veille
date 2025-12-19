@@ -5,3 +5,4 @@ python-dotenv==1.0.0
 PyYAML==6.0.1
 mkdocs==1.5.3
 mkdocs-material==9.4.14
+trafilatura==1.6.3

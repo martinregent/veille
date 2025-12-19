@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup
 from mistralai.client import MistralClient
 import yaml
 from dotenv import load_dotenv
+import trafilatura
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -55,37 +56,72 @@ def get_open_issues():
         print(f"❌ Erreur lors de la récupération des issues: {e}")
         return []
 
-def scrape_content(url):
-    """Scrape le contenu textuel d'une URL."""
+def extract_issue_data(issue_body):
+    """
+    Extrait les données de l'issue (URL, note, tags).
+    Supporte le format JSON ou le format URL simple.
+    """
+    issue_body = issue_body.strip()
+    
+    # Essayer de parser comme JSON
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
+        if issue_body.startswith('{'):
+            data = json.loads(issue_body)
+            return {
+                "url": data.get("url"),
+                "note": data.get("note", ""),
+                "user_tags": data.get("tags", [])
+            }
+    except json.JSONDecodeError:
+        pass
+    
+    # Format fallback: première ligne est l'URL
+    lines = issue_body.split('\n')
+    url = lines[0].strip()
+    return {
+        "url": url if url.startswith(('http://', 'https://')) else None,
+        "note": "",
+        "user_tags": []
+    }
 
-        soup = BeautifulSoup(response.content, 'html.parser')
+def scrape_content(url):
+    """Scrape le contenu textuel et l'image d'une URL via Trafilatura."""
+    try:
+        downloaded = trafilatura.fetch_url(url)
+        if not downloaded:
+            print(f"   ⚠️  Trafilatura: Échec du téléchargement pour {url}")
+            return None, None
 
-        # Nettoyage basique (supprimer scripts, styles, nav, footer)
-        for script in soup(["script", "style", "nav", "footer", "noscript"]):
-            script.decompose()
+        # Extraction du texte principal
+        text = trafilatura.extract(downloaded, include_comments=False, include_tables=True, no_fallback=False)
+        
+        # Extraction des métadonnées pour l'image
+        metadata = trafilatura.extract_metadata(downloaded)
+        image_url = metadata.image if metadata and metadata.image else None
 
-        text = soup.get_text(separator=' ')
-        # Réduire les espaces multiples
-        clean_text = re.sub(r'\s+', ' ', text).strip()
+        if not text:
+             print(f"   ⚠️  Trafilatura: Pas de texte extrait pour {url}")
+             return None, None
 
         # Limiter la taille pour ne pas exploser le contexte Mistral
-        if len(clean_text) > 15000:
-            clean_text = clean_text[:15000] + "..."
+        if len(text) > 25000:
+            text = text[:25000] + "..."
 
-        return clean_text if clean_text else None
+        return text, image_url
+
     except Exception as e:
         print(f"   ⚠️  Erreur scraping {url}: {e}")
-        return None
+        return None, None
 
-def analyze_with_mistral(text, url):
+def analyze_with_mistral(text, url, user_note="", user_tags=[]):
     """Analyse le texte avec Mistral et retourne un JSON structuré."""
     client = MistralClient(api_key=MISTRAL_API_KEY)
+
+    user_context = ""
+    if user_note:
+        user_context += f"\nNote de l'utilisateur sur cet article : {user_note}"
+    if user_tags:
+        user_context += f"\nTags suggérés par l'utilisateur : {', '.join(user_tags)}"
 
     prompt = f"""Analyse le texte suivant qui provient d'un article technique pour une veille technologique.
 
@@ -93,9 +129,10 @@ INSTRUCTIONS IMPORTANTES:
 - Réponds UNIQUEMENT en JSON valide (pas de texte avant ou après)
 - Ne modifie pas la structure JSON proposée
 - Assure-toi que le JSON est parsable
-- Les tags doivent être pertinents et courts
+- Les tags doivent être pertinents et courts. Inclus les tags suggérés par l'utilisateur si pertinents.
 - La thématique doit être UNE SEULE parmi: [DevOps, IA & Data, Développement, Architecture, Business, Cybersécurité, Infrastructure]
-- Le résumé doit faire entre 300-500 mots
+- Le résumé doit faire entre 300-500 mots.
+- Intègre la note de l'utilisateur dans le résumé si elle apporte du contexte.
 
 Format JSON attendu:
 {{
@@ -104,6 +141,8 @@ Format JSON attendu:
     "tags": ["tag1", "tag2", "tag3"],
     "thematique": "Nom de la thématique"
 }}
+
+{user_context}
 
 Texte à analyser:
 {text}
@@ -121,7 +160,6 @@ Source: {url}
         response_text = chat_response.choices[0].message.content.strip()
 
         # Essayer de parser le JSON
-        # Parfois Mistral ajoute du texte avant/après, on cherche le JSON
         json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
         if json_match:
             response_text = json_match.group()
@@ -143,7 +181,7 @@ Source: {url}
         print(f"   ⚠️  Erreur Mistral: {e}")
         return None
 
-def create_markdown_fiche(data, url, issue_number):
+def create_markdown_fiche(data, url, issue_number, image_url=None):
     """Crée le fichier Markdown de la fiche."""
     date_now = datetime.datetime.now()
     year = date_now.strftime("%Y")
@@ -167,6 +205,9 @@ def create_markdown_fiche(data, url, issue_number):
         "source": url,
         "issue": f"#{issue_number}"
     }
+    
+    if image_url:
+        frontmatter["image"] = image_url
 
     content = f"""---
 {yaml.dump(frontmatter, allow_unicode=True, default_flow_style=False)}---
@@ -175,7 +216,12 @@ def create_markdown_fiche(data, url, issue_number):
 
 *Source : [{url}]({url})*
 
-## Résumé
+"""
+
+    if image_url:
+        content += f"![Image principale]({image_url})\n\n"
+
+    content += f"""## Résumé
 
 {data['resume']}
 
@@ -250,24 +296,19 @@ def main():
 
     for idx, issue in enumerate(issues, 1):
         issue_number = issue['number']
-        url = issue['body'].strip() if issue['body'] else None
+        issue_body = issue['body'] or ""
+        
+        # Extraction des données structurées
+        data = extract_issue_data(issue_body)
+        url = data['url']
+        note = data['note']
+        user_tags = data['user_tags']
 
         if not url:
-            print(f"[{idx}/{len(issues)}] Issue #{issue_number}: ❌ Pas d'URL")
+            print(f"[{idx}/{len(issues)}] Issue #{issue_number}: ❌ Pas d'URL valide")
             add_issue_comment(
                 issue_number,
-                "❌ Erreur: L'issue ne contient pas d'URL valide dans la description."
-            )
-            close_issue(issue_number)
-            error_count += 1
-            continue
-
-        # Valider que c'est une URL
-        if not url.startswith(('http://', 'https://')):
-            print(f"[{idx}/{len(issues)}] Issue #{issue_number}: ❌ URL invalide: {url[:50]}")
-            add_issue_comment(
-                issue_number,
-                f"❌ Erreur: '{url}' n'est pas une URL valide."
+                "❌ Erreur: L'issue ne contient pas d'URL valide."
             )
             close_issue(issue_number)
             error_count += 1
@@ -275,20 +316,20 @@ def main():
 
         print(f"[{idx}/{len(issues)}] Issue #{issue_number}: {url[:60]}")
 
-        # Scraper le contenu
-        content = scrape_content(url)
+        # Scraper le contenu avec Trafilatura
+        content, image_url = scrape_content(url)
         if not content:
             print(f"   ⚠️  Impossible de scraper le contenu")
             add_issue_comment(
                 issue_number,
-                "⚠️ Erreur: Impossible de récupérer le contenu de l'URL. L'URL est peut-être invalide ou inaccessible."
+                "⚠️ Erreur: Impossible de récupérer le contenu de l'URL. L'URL est peut-être invalide, protégée ou inaccessible."
             )
             close_issue(issue_number)
             error_count += 1
             continue
 
         # Analyser avec Mistral
-        analysis = analyze_with_mistral(content, url)
+        analysis = analyze_with_mistral(content, url, note, user_tags)
         if not analysis:
             print(f"   ⚠️  Erreur analyse Mistral")
             add_issue_comment(
@@ -300,7 +341,7 @@ def main():
             continue
 
         # Créer la fiche Markdown
-        if create_markdown_fiche(analysis, url, issue_number):
+        if create_markdown_fiche(analysis, url, issue_number, image_url):
             # Ajouter un commentaire de succès
             add_issue_comment(
                 issue_number,
