@@ -36,7 +36,7 @@ async function captureLink(url, pageTitle) {
   const config = await loadConfig();
 
   if (!config.token) {
-    alert('Veuillez configurer votre token GitHub dans l\'extension');
+    showNotification('⚠️ Configuration requise', 'Cliquez sur l\'extension pour configurer votre token GitHub.');
     return;
   }
 
@@ -55,7 +55,7 @@ async function capturePage(url, title) {
   const config = await loadConfig();
 
   if (!config.token) {
-    alert('Veuillez configurer votre token GitHub dans l\'extension');
+    showNotification('⚠️ Configuration requise', 'Cliquez sur l\'extension pour configurer votre token GitHub.');
     return;
   }
 
@@ -88,8 +88,15 @@ async function loadConfig() {
 /**
  * Crée une issue GitHub via l'API
  */
-async function createGitHubIssue(config, url, description) {
-  const body = description ? `${url}\n\n${description}` : url;
+async function createGitHubIssue(config, url, note) {
+  // Construction du payload JSON structuré
+  const issueData = {
+    url: url,
+    note: note || "",
+    tags: [] // Pas de tags via le menu contextuel pour l'instant
+  };
+
+  const body = JSON.stringify(issueData, null, 2);
 
   const response = await fetch(
     `https://api.github.com/repos/${config.user}/${config.repo}/issues`,
