@@ -5,18 +5,21 @@
 
 // Crée un menu contextuel pour capturer rapidement un lien
 chrome.runtime.onInstalled.addListener(() => {
-  // Menu contextuel pour les liens
-  chrome.contextMenus.create({
-    id: 'capture-link',
-    title: 'Ajouter à Veille',
-    contexts: ['link']
-  });
+  // Nettoyer les menus existants pour éviter les erreurs lors du reload
+  chrome.contextMenus.removeAll(() => {
+    // Menu contextuel pour les liens
+    chrome.contextMenus.create({
+      id: 'capture-link',
+      title: 'Ajouter à Veille',
+      contexts: ['link']
+    });
 
-  // Menu contextuel pour la page
-  chrome.contextMenus.create({
-    id: 'capture-page',
-    title: 'Ajouter cette page à Veille',
-    contexts: ['page']
+    // Menu contextuel pour la page
+    chrome.contextMenus.create({
+      id: 'capture-page',
+      title: 'Ajouter cette page à Veille',
+      contexts: ['page']
+    });
   });
 });
 

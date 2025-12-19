@@ -16,7 +16,8 @@ from bs4 import BeautifulSoup
 from mistralai.client import MistralClient
 import yaml
 from dotenv import load_dotenv
-import trafilatura
+# trafilatura supprimé car incompatible avec Python 3.14
+
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -39,15 +40,23 @@ if not GITHUB_TOKEN:
 # --- FONCTIONS ---
 
 def get_open_issues():
-    """Récupère les issues GitHub avec le label 'to_process'."""
+    """Récupère les issues GitHub à traiter (label 'to_process' ou titre spécifique)."""
     url = f"https://api.github.com/repos/{GITHUB_USER}/{REPO_NAME}/issues"
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-    params = {"labels": "to_process", "state": "open", "per_page": 100}
+    # On récupère toutes les issues ouvertes sans filtrer par label ici
+    params = {"state": "open", "per_page": 100}
 
     try:
         resp = requests.get(url, headers=headers, params=params, timeout=10)
         if resp.status_code == 200:
-            return resp.json()
+            all_issues = resp.json()
+            # Filtrage côté client : Label 'to_process' OU Titre 'Article à traiter'
+            filtered_issues = [
+                i for i in all_issues
+                if any(l['name'] == 'to_process' for l in i['labels']) or
+                "Article à traiter" in i['title']
+            ]
+            return filtered_issues
         else:
             print(f"❌ Erreur API GitHub: {resp.status_code}")
             print(f"   {resp.text}")
@@ -85,29 +94,36 @@ def extract_issue_data(issue_body):
     }
 
 def scrape_content(url):
-    """Scrape le contenu textuel et l'image d'une URL via Trafilatura."""
+    """Scrape le contenu textuel et l'image d'une URL via BeautifulSoup."""
     try:
-        downloaded = trafilatura.fetch_url(url)
-        if not downloaded:
-            print(f"   ⚠️  Trafilatura: Échec du téléchargement pour {url}")
-            return None, None
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
 
-        # Extraction du texte principal
-        text = trafilatura.extract(downloaded, include_comments=False, include_tables=True, no_fallback=False)
-        
-        # Extraction des métadonnées pour l'image
-        metadata = trafilatura.extract_metadata(downloaded)
-        image_url = metadata.image if metadata and metadata.image else None
+        soup = BeautifulSoup(response.content, 'html.parser')
 
-        if not text:
-             print(f"   ⚠️  Trafilatura: Pas de texte extrait pour {url}")
+        # Extraction de l'image og:image
+        og_image = soup.find("meta", property="og:image")
+        image_url = og_image["content"] if og_image else None
+
+        # Nettoyage basique (supprimer scripts, styles, nav, footer)
+        for script in soup(["script", "style", "nav", "footer", "noscript", "header"]):
+            script.decompose()
+
+        text = soup.get_text(separator=' ')
+        # Réduire les espaces multiples
+        clean_text = re.sub(r'\s+', ' ', text).strip()
+
+        if not clean_text:
              return None, None
 
         # Limiter la taille pour ne pas exploser le contexte Mistral
-        if len(text) > 25000:
-            text = text[:25000] + "..."
+        if len(clean_text) > 15000:
+            clean_text = clean_text[:15000] + "..."
 
-        return text, image_url
+        return clean_text, image_url
 
     except Exception as e:
         print(f"   ⚠️  Erreur scraping {url}: {e}")
@@ -164,7 +180,13 @@ Source: {url}
         if json_match:
             response_text = json_match.group()
 
-        data = json.loads(response_text)
+        try:
+            # strict=False autorise les sauts de ligne dans les chaînes (common LLM issue)
+            data = json.loads(response_text, strict=False)
+        except json.JSONDecodeError:
+            # Fallback : tentative de nettoyage des sauts de ligne non échappés
+            clean_text = response_text.replace('\n', ' ').replace('\r', '')
+            data = json.loads(clean_text, strict=False)
 
         # Validation minimale
         required_keys = {"titre", "resume", "tags", "thematique"}
@@ -201,7 +223,7 @@ def create_markdown_fiche(data, url, issue_number, image_url=None):
         "title": data['titre'],
         "tags": data['tags'],
         "category": data['thematique'],
-        "date": date_now.strftime("%Y-%m-%d"),
+        "date": date_now.date(),  # Objet date pour éviter les quotes dans le YAML
         "source": url,
         "issue": f"#{issue_number}"
     }

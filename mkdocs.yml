@@ -36,9 +36,14 @@ plugins:
   - search:
       lang: fr
       separator: '[\s\-\.]+'
-      min_search_length: 2
   - tags:
       tags_file: tags.md
+  - blog:
+      post_dir: fiches
+      post_url_date_format: yyyy/MM
+      blog_toc: true
+      post_readtime: false
+
 
 
 markdown_extensions:
@@ -57,5 +62,7 @@ markdown_extensions:
 
 nav:
   - Accueil: index.md
+  - Fiches: blog/
   - Tags: tags.md
-  - Fiches: fiches/
+  - A propos: apropos.md
+

@@ -3,6 +3,5 @@ beautifulsoup4==4.12.2
 mistralai==0.1.7
 python-dotenv==1.0.0
 PyYAML==6.0.1
-mkdocs==1.5.3
-mkdocs-material==9.4.14
-trafilatura==1.6.3
+mkdocs>=1.5.3
+mkdocs-material>=9.5.0

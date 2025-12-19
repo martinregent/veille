@@ -31,3 +31,5 @@ site/
 # OS
 .DS_Store
 Thumbs.db
+Veille.app/
+ProcessVeille.app/
