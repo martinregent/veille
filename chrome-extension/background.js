@@ -33,6 +33,35 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 /**
+ * Capture d'article (Local-First Sync)
+ */
+async function captureArticle(config, url, description) {
+  // 1. Essayer le serveur local d'abord
+  try {
+    const localResponse = await fetch('http://localhost:5888/api/capture', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: url,
+        description: description,
+        tags: []
+      })
+    });
+
+    if (localResponse.ok) {
+      const result = await localResponse.json();
+      return { success: true, method: 'local', data: result };
+    }
+  } catch (err) {
+    console.log('ℹ️ Serveur local non atteint, repli vers GitHub API:', err.message);
+  }
+
+  // 2. Repli vers GitHub API directe
+  const issue = await createGitHubIssue(config, url, description);
+  return { success: true, method: 'github', data: issue };
+}
+
+/**
  * Capture un lien
  */
 async function captureLink(url, pageTitle) {
@@ -44,8 +73,12 @@ async function captureLink(url, pageTitle) {
   }
 
   try {
-    const issue = await createGitHubIssue(config, url, `Capturé depuis: ${pageTitle}`);
-    showNotification(`✅ Article ajouté!`, `Issue #${issue.number} créée`);
+    const result = await captureArticle(config, url, `Capturé depuis: ${pageTitle}`);
+    const data = result.data;
+    const msg = result.method === 'local'
+      ? `Traité localement (Issue #${data.issue_number})`
+      : `Issue #${data.number} créée`;
+    showNotification(`✅ Article ajouté!`, msg);
   } catch (error) {
     showNotification('❌ Erreur', error.message);
   }
@@ -63,8 +96,12 @@ async function capturePage(url, title) {
   }
 
   try {
-    const issue = await createGitHubIssue(config, url, '');
-    showNotification(`✅ Article ajouté!`, `Issue #${issue.number} créée`);
+    const result = await captureArticle(config, url, '');
+    const data = result.data;
+    const msg = result.method === 'local'
+      ? `Traité localement (Issue #${data.issue_number})`
+      : `Issue #${data.number} créée`;
+    showNotification(`✅ Article ajouté!`, msg);
   } catch (error) {
     showNotification('❌ Erreur', error.message);
   }

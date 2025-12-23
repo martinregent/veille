@@ -12,21 +12,29 @@ import datetime
 import re
 import json
 from pathlib import Path
-from bs4 import BeautifulSoup
-from mistralai.client import MistralClient
 import yaml
 from dotenv import load_dotenv
 # trafilatura supprimé car incompatible avec Python 3.14
 
 
 # Charger les variables d'environnement
-load_dotenv()
+# On cherche le .env à la racine du projet
+SCRIPT_DIR = Path(__file__).parent.absolute()
+PROJECT_ROOT = SCRIPT_DIR.parent
+ENV_PATH = PROJECT_ROOT / ".env"
+load_dotenv(dotenv_path=ENV_PATH)
 
 # --- CONFIGURATION ---
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "").strip()
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
 GITHUB_USER = os.getenv("GITHUB_USER", "martinregent").strip()
 REPO_NAME = os.getenv("REPO_NAME", "veille").strip()
+
+# --- PATHS ---
+# Définir la racine du projet de manière absolue
+# PROJECT_ROOT déjà défini au dessus pour load_dotenv
+DOCS_DIR = PROJECT_ROOT / "docs"
+FICHES_DIR = DOCS_DIR / "fiches"
 
 # Validation des clés
 if not MISTRAL_API_KEY:
@@ -84,17 +92,26 @@ def extract_issue_data(issue_body):
     except json.JSONDecodeError:
         pass
     
-    # Format fallback: première ligne est l'URL
-    lines = issue_body.split('\n')
-    url = lines[0].strip()
+    # Format fallback: Recherche d'une URL dans le texte (supporte markdown, texte brut, etc.)
+    # Cherche http:// ou https:// suivi de caractères non-espaces et non ')]'
+    url_match = re.search(r'(https?://[^\s)\]"]+)', issue_body)
+    
+    if url_match:
+        url = url_match.group(1)
+    else:
+        # Si rien trouvé, on tente la première ligne nettoyée
+        lines = issue_body.split('\n')
+        url = lines[0].strip()
+
     return {
-        "url": url if url.startswith(('http://', 'https://')) else None,
+        "url": url if url and url.startswith(('http://', 'https://')) else None,
         "note": "",
         "user_tags": []
     }
 
 def scrape_content(url):
     """Scrape le contenu textuel et l'image d'une URL via BeautifulSoup."""
+    from bs4 import BeautifulSoup
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -131,6 +148,7 @@ def scrape_content(url):
 
 def analyze_with_mistral(text, url, user_note="", user_tags=[]):
     """Analyse le texte avec Mistral et retourne un JSON structuré."""
+    from mistralai.client import MistralClient
     client = MistralClient(api_key=MISTRAL_API_KEY)
 
     user_context = ""
@@ -211,11 +229,22 @@ def create_markdown_fiche(data, url, issue_number, image_url=None):
     day = date_now.strftime("%d")
 
     # Création du dossier docs/fiches/YYYY/MM
-    base_path = Path("docs/fiches") / year / month
+    base_path = FICHES_DIR / year / month
     base_path.mkdir(parents=True, exist_ok=True)
 
     # Génération du slug pour le nom du fichier
-    safe_title = re.sub(r'[^a-z0-9]+', '-', data['titre'].lower()).strip('-')
+    # On remplace les accents et caractères spéciaux pour un slug propre
+    def slugify(text):
+        text = text.lower()
+        # Remplacements de base pour le français
+        replacements = {'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e', 'à': 'a', 'â': 'a', 'î': 'i', 'ï': 'i', 'ô': 'o', 'û': 'u', 'ù': 'u', 'ç': 'c'}
+        for char, repl in replacements.items():
+            text = text.replace(char, repl)
+        # Tout ce qui n'est pas alphanumérique devient un tiret
+        text = re.sub(r'[^a-z0-9]+', '-', text).strip('-')
+        return text
+
+    safe_title = slugify(data['titre'])
     filename = base_path / f"{day}-{safe_title}.md"
 
     # Frontmatter YAML pour MkDocs
@@ -256,13 +285,30 @@ def create_markdown_fiche(data, url, issue_number, image_url=None):
 *Généré automatiquement via Mistral AI - Issue {issue_number}*
 """
 
+    # Tentative d'écriture
     try:
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"   ✅ Fiche créée: {filename}")
-        return True
+        # 1. Tentative standard
+        try:
+            with open(filename, "w", encoding="utf-8") as f:
+                f.write(content)
+            print(f"   ✅ Fiche créée: {filename}")
+            return True
+        except PermissionError as e:
+            print(f"   ⚠️ Échec écriture Python ({e}), tentative via Shell...")
+            
+            # 2. Repli via Shell (cat)
+            import subprocess
+            process = subprocess.Popen(['cat', '-', '>', str(filename)], stdin=subprocess.PIPE, shell=True)
+            process.communicate(input=content.encode('utf-8'))
+            
+            if process.returncode == 0:
+                print(f"   ✅ Fiche créée via Shell: {filename}")
+                return True
+            else:
+                raise Exception(f"Shell return code: {process.returncode}")
+
     except Exception as e:
-        print(f"   ❌ Erreur création fichier: {e}")
+        print(f"   ❌ Erreur fatale création fiche: {e}")
         return False
 
 def close_issue(issue_number):
@@ -299,6 +345,117 @@ def add_issue_comment(issue_number, comment):
         print(f"   ⚠️  Erreur ajout commentaire: {e}")
         return False
 
+def update_index_page():
+    """Régénère la page d'accueil avec la liste chronologique des fiches."""
+    if not FICHES_DIR.exists():
+        return
+
+    articles = []
+
+    # Parcourir tous les fichiers markdown
+    processed_titles = set()
+    print(f"📂 Recherche de fiches dans: {FICHES_DIR}")
+    for file_path in FICHES_DIR.rglob("*.md"):
+        # Ignorer l'index lui-même
+        if file_path.name == "index.md": continue
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            # Extraction frontmatter
+            if content.startswith('---'):
+                parts = content.split('---', 2)
+                if len(parts) >= 3:
+                    try:
+                        fm = yaml.safe_load(parts[1])
+                    except Exception as e:
+                        print(f"   ⚠️  Erreur YAML dans {file_path}: {e}")
+                        continue
+                        
+                    title = fm.get('title', file_path.stem)
+                    
+                    # Dédoublonnage par titre (insensible à la casse)
+                    case_title = title.lower().strip()
+                    if case_title in processed_titles:
+                        continue
+                    processed_titles.add(case_title)
+                    
+                    date_val = fm.get('date')
+                    
+                    # Parsing robuste de la date
+                    if isinstance(date_val, (datetime.date, datetime.datetime)):
+                        date_obj = date_val if isinstance(date_val, datetime.date) else date_val.date()
+                    elif isinstance(date_val, str):
+                        try:
+                            # Tente formats ISO YYYY-MM-DD
+                            date_obj = datetime.datetime.strptime(date_val[:10], "%Y-%m-%d").date()
+                        except:
+                            date_obj = datetime.date.min
+                    else:
+                        date_obj = datetime.date.min
+                    
+                    # Chemin relatif pour le lien (MkDocs s'attend à un chemin relatif à la racine docs/)
+                    rel_path = file_path.relative_to(DOCS_DIR)
+                    
+                    articles.append({
+                        "date": date_obj,
+                        "title": title,
+                        "path": str(rel_path)
+                    })
+        except Exception as e:
+            print(f"⚠️  Erreur lecture {file_path}: {e}")
+
+    print(f"📊 {len(articles)} articles trouvés pour l'index.")
+
+    # Trier par date décroissante puis titre
+    articles.sort(key=lambda x: (x['date'], x['title']), reverse=True)
+
+    # Générer le contenu de l'index
+    index_content = """# 📰 Veille Technologique
+
+## 📅 Derniers articles
+
+"""
+
+    current_month = None
+    
+    for art in articles:
+        # En-tête de mois
+        art_month = art['date'].strftime("%B %Y").capitalize() if art['date'] != datetime.date.min else "Anciens articles"
+        if art_month != current_month:
+            index_content += f"\n### {art_month}\n\n"
+            current_month = art_month
+            
+        date_str = art['date'].strftime("%d/%m") if art['date'] != datetime.date.min else "??"
+        index_content += f"- **[{date_str}]** [{art['title']}]({art['path']})\n"
+
+    try:
+        index_path = DOCS_DIR / "index.md"
+        temp_path = DOCS_DIR / "index.md.tmp"
+        
+        # 1. Tentative d'écriture via temporaire + Shell replace (Workaround macOS EPERM)
+        try:
+            # Écrire dans un fichier temporaire
+            with open(temp_path, "w", encoding="utf-8") as f:
+                f.write(index_content)
+            
+            # Utiliser le shell pour le remplacement (cat) si os.replace échoue
+            import subprocess
+            cmd = f"cat {temp_path} > {index_path} && rm {temp_path}"
+            subprocess.run(cmd, shell=True, check=True)
+            print(f"✅ Page d'accueil ({index_path}) mise à jour via Shell.")
+            return
+        except Exception as e:
+            print(f"   ⚠️  Tentative Shell-cat échouée: {e}")
+            # Ultime tentative standard
+            with open(index_path, "w", encoding="utf-8") as f:
+                f.write(index_content)
+            print("   ✅ Index mis à jour via écriture directe.")
+
+    except Exception as e_final:
+        print(f"❌ Échec définitif mise à jour index: {e_final}")
+
 # --- MAIN ---
 
 def main():
@@ -309,6 +466,8 @@ def main():
     issues = get_open_issues()
     if not issues:
         print("ℹ️  Aucune issue à traiter.")
+        # On met quand même à jour l'index au cas où il y a eu des modifs manuelles
+        update_index_page()
         return
 
     print(f"🔍 {len(issues)} lien(s) à traiter...\n")
@@ -387,6 +546,9 @@ def main():
     print(f"✅ Succès: {success_count}")
     print(f"❌ Erreurs: {error_count}")
     print(f"{'='*50}\n")
+    
+    # Mise à jour de la page d'accueil
+    update_index_page()
 
 if __name__ == "__main__":
     main()

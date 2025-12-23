@@ -89,6 +89,37 @@ async function getCurrentPageInfo() {
 }
 
 /**
+ * Capture d'article (Local-First Sync)
+ */
+async function captureArticle(config, url, description, tags) {
+  // 1. Essayer le serveur local d'abord
+  try {
+    const localResponse = await fetch('http://localhost:5888/api/capture', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: url,
+        description: description,
+        tags: tags ? tags.split(',').map(t => t.trim()).filter(t => t) : []
+      }),
+      // Timeout court pour ne pas bloquer si le serveur est éteint
+    });
+
+    if (localResponse.ok) {
+      const result = await localResponse.json();
+      console.log('✅ Capture locale réussie:', result);
+      return { success: true, method: 'local', data: result };
+    }
+  } catch (err) {
+    console.log('ℹ️ Serveur local non atteint, repli vers GitHub API:', err.message);
+  }
+
+  // 2. Repli vers GitHub API directe
+  const issue = await createGitHubIssue(config, url, description, tags);
+  return { success: true, method: 'github', data: issue };
+}
+
+/**
  * Crée une issue GitHub via l'API
  */
 async function createGitHubIssue(config, url, note, tags) {
@@ -184,9 +215,17 @@ captureBtn.addEventListener('click', async () => {
   showState(loadingState);
 
   try {
-    const issue = await createGitHubIssue(config, url, description, tags);
-    currentIssueUrl = issue.html_url;
-    successMessage.textContent = `Issue #${issue.number} créée avec succès!`;
+    const result = await captureArticle(config, url, description, tags);
+    const data = result.data;
+
+    if (result.method === 'local') {
+      successMessage.textContent = `Article traité localement! (GitHub Issue #${data.issue_number})`;
+      currentIssueUrl = `https://github.com/${config.user}/${config.repo}/issues/${data.issue_number}`;
+    } else {
+      successMessage.textContent = `Issue #${data.number} créée avec succès!`;
+      currentIssueUrl = data.html_url;
+    }
+
     showState(successState);
   } catch (error) {
     showError(error.message);

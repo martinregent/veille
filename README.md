@@ -173,11 +173,10 @@ Pour un hébergement gratuit, ultra-rapide et global :
 
 #### 1️⃣ Ingestion (sur mobile/laptop)
 
-**Option A : Extension Chrome (⭐ Recommandé, plus rapide)**
-
 1. Installe l'extension depuis `chrome-extension/` (voir [Guide d'installation](chrome-extension/README.md))
 2. Sur n'importe quelle page → **Clic droit** → **"Ajouter à Veille"**
-3. 🎉 L'article est capturé automatiquement!
+3. 🎉 **Mode Local-First :** Si ton serveur local est lancé, la fiche est créée **instantanément** sur ton disque !
+4. 🎉 **Fallback GitHub :** Sinon, une issue est créée sur GitHub pour un traitement ultérieur par les Actions.
 
 [En savoir plus sur l'extension →](chrome-extension/README.md)
 
